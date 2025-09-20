@@ -5,12 +5,14 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const port = 3000;
 const fs = require('fs');
+const jwt = require("jsonwebtoken");
 
 const app = express();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 const SESSION_KEY = 'Authorization';
+const SECRET = "my_secure_secret_.a1235";
 
 class Session {
     #sessions = {}
@@ -58,9 +60,19 @@ class Session {
 
 const sessions = new Session();
 
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
     let currentSession = {};
-    let sessionId = req.get(SESSION_KEY);
+    const token = req.get(SESSION_KEY);
+    console.log("token", token);
+    let sessionId = token ? (await new Promise((res, rej) => jwt.verify(token, SECRET, (err, decoded) => {
+      if (err) {
+        return rej(err)
+      }
+      res(decoded)
+    })).catch(err => {
+      console.error(err);
+      return { token: undefined }
+    })).token : undefined;
 
     if (sessionId) {
         currentSession = sessions.get(sessionId);
@@ -115,6 +127,8 @@ const users = [
 app.post('/api/login', (req, res) => {
     const { login, password } = req.body;
 
+    console.log(`loging ${login, password}`);
+
     const user = users.find((user) => {
         if (user.login == login && user.password == password) {
             return true;
@@ -122,11 +136,17 @@ app.post('/api/login', (req, res) => {
         return false
     });
 
+    console.log(user);
+
     if (user) {
         req.session.username = user.username;
         req.session.login = user.login;
 
-        res.json({ token: req.sessionId });
+        const body = { token: req.sessionId };
+        const jwtToken = jwt.sign(body, SECRET, { expiresIn: '1h' });
+
+        console.log("res", jwtToken);
+        res.json({ token: jwtToken });
     }
 
     res.status(401).send();
